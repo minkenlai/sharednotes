@@ -1,1 +1,15 @@
-{"description":"Tiny shared-notes REST service for two people and their Muses","name":"sharednotes","private":true,"scripts":{"deploy":"wrangler deploy","migrate":"wrangler d1 migrations apply sharednotes --remote"},"version":"0.1.0","devDependencies":{"wrangler":"^4.156.0"}}
+{
+  "name": "sharednotes",
+  "version": "0.1.0",
+  "description": "Tiny shared-notes REST service for two people and their Muses",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "migrate": "wrangler d1 migrations apply sharednotes --remote",
+    "test": "node --test test/api.test.js"
+  },
+  "devDependencies": {
+    "wrangler": "^4.156.0"
+  }
+}
