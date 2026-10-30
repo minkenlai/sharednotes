@@ -1,0 +1,4 @@
+# Local development variables used by `wrangler dev`
+API_KEYS=dev-key-admin,dev-key-user
+KEY_OWNERS=admin,user
+KEY_ROLES=admin,user

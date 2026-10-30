@@ -1,0 +1,1 @@
+{"description":"Tiny shared-notes REST service for two people and their Muses","name":"sharednotes","private":true,"scripts":{"deploy":"wrangler deploy","migrate":"wrangler d1 migrations apply sharednotes --remote"},"version":"0.1.0","devDependencies":{"wrangler":"^4.156.0"}}
