@@ -13,7 +13,7 @@
 //   ADMIN_USERS secret: optional comma-separated list of owner names that have "admin" role.
 //   Defaults to "user" if unspecified.
 
-import { INSTRUCTIONS } from "./instructions.js";
+import { INSTRUCTIONS, getAdminSection } from "./instructions.js";
 
 const CORS_HEADERS = {
   "access-control-allow-origin": "*",
@@ -156,12 +156,18 @@ export default {
       const url = new URL(request.url);
       const parts = url.pathname.split("/").filter(Boolean);
 
-      // Public self-documenting endpoints
+      // Public self-documenting endpoints (admin gets privileged section appended)
       if (
         parts.length === 0 ||
         (parts.length === 1 && ["instructions", "docs", "llms.txt"].includes(parts[0].toLowerCase()))
       ) {
-        return new Response(INSTRUCTIONS, {
+        const auth = authenticate(request, env);
+        const isAdmin = auth && auth.role === "admin";
+        const content = isAdmin
+          ? `${INSTRUCTIONS}\n${getAdminSection(auth.owner)}`
+          : INSTRUCTIONS;
+
+        return new Response(content, {
           status: 200,
           headers: {
             "content-type": "text/markdown; charset=utf-8",

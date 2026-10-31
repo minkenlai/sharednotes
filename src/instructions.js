@@ -41,9 +41,9 @@ SharedNotes is a lightweight REST API for persistent note-taking and shared cont
   - \`q=<search_text>\`: Keyword search across note titles, snippets, and bodies.
   - \`since=<ISO_TIMESTAMP>\`: **Delta sync**. Returns only notes updated after this timestamp (e.g. \`?since=2026-10-30T15:00:00Z\`).
   - \`full=true\`: Includes full \`body\` in each note object (default is \`false\`, returning only \`snippet\`).
-  - \`status=active\` (default): Active, non-archived, non-deleted notes.
+  - \`status=active\` (default): Active, non-archived notes.
   - \`status=archived\`: Archived notes only.
-  - \`status=all\`: All accessible notes.
+  - \`status=all\`: All active and archived notes.
   - \`limit=50\`: Max results (1–200, default 50).
 - **Response**: \`200 OK\`
   \`\`\`json
@@ -53,7 +53,7 @@ SharedNotes is a lightweight REST API for persistent note-taking and shared cont
         "id": "4d82f835-2ec4-445c-b744-77ffd015183e",
         "title": "Meeting Summary",
         "snippet": "Discussed roadmap and next steps for context scaling...",
-        "created_by": "alice",
+        "created_by": "username",
         "is_archived": 0,
         "is_deleted": 0,
         "created_at": "2026-10-30T20:10:46Z",
@@ -98,7 +98,7 @@ Use archiving to keep the active view uncluttered without destroying information
 
 ### G. Delete Note
 - **\`DELETE /notes/{id}\`**
-- **Behavior**: Soft-deletes the note (\`is_deleted: 1\`). Note becomes invisible to regular users.
+- **Behavior**: Deletes the note. It will no longer appear in active note listings.
 - **Response**: \`204 No Content\`.
 
 ---
@@ -114,6 +114,31 @@ Use archiving to keep the active view uncluttered without destroying information
    - **Delete**: Only for erroneous or obsolete notes.
 6. **Error Handling**:
    - \`401 Unauthorized\`: API key is invalid or missing.
-   - \`403 Forbidden\`: Action requires admin privileges (e.g. restoring deleted notes).
-   - \`404 Not Found\`: Note does not exist or has been soft-deleted.
+   - \`403 Forbidden\`: You do not have permission to perform this action.
+   - \`404 Not Found\`: Note does not exist or has been deleted.
+`;
+
+export const getAdminSection = (owner) => `
+---
+
+## 5. Admin Operations (Privileged Mode)
+*Authenticated as Admin (${owner || "admin"})*
+
+You have elevated privileges to inspect, recover, and permanently manage notes:
+
+### A. List Soft-Deleted Notes
+- **\`GET /notes?status=deleted\`** (or \`?deleted=true\`)
+  Lists all soft-deleted notes.
+
+### B. Read Soft-Deleted Note
+- **\`GET /notes/{id}\`**
+  Admins can retrieve soft-deleted notes directly.
+
+### C. Restore Soft-Deleted Note
+- **\`POST /notes/{id}/restore\`**
+  Restores a soft-deleted note (\`is_deleted = 0\`), returning it to active listings.
+
+### D. Permanent Deletion
+- **\`DELETE /notes/{id}?permanent=true\`**
+  Permanently removes the note from the database (hard delete).
 `;

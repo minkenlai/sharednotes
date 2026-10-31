@@ -63,11 +63,27 @@ describe("Shared Notes Service API", () => {
       assert.ok(text.includes("# SharedNotes Service"));
     });
 
-    it("serves agent manual at /llms.txt", async () => {
+    it("serves agent manual at /llms.txt without admin section by default", async () => {
       const res = await req("/llms.txt");
       assert.equal(res.status, 200);
       const text = await res.text();
       assert.ok(text.includes("# SharedNotes Service"));
+      assert.ok(!text.includes("Admin Operations"));
+    });
+
+    it("serves scrubbed manual to regular user", async () => {
+      const res = await req("/llms.txt", { auth: USER_KEY });
+      assert.equal(res.status, 200);
+      const text = await res.text();
+      assert.ok(!text.includes("Admin Operations"));
+    });
+
+    it("dynamically appends admin operations when accessed by admin", async () => {
+      const res = await req("/llms.txt", { auth: ADMIN_KEY });
+      assert.equal(res.status, 200);
+      const text = await res.text();
+      assert.ok(text.includes("Admin Operations (Privileged Mode)"));
+      assert.ok(text.includes("Restore Soft-Deleted Note"));
     });
   });
 
