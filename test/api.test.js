@@ -32,6 +32,7 @@ const req = (path, options = {}) => {
 };
 
 // Track test-created notes so only test data is cleaned up
+const TEST_PREFIX = "*TEST* ";
 const createdTestNoteIds = new Set();
 
 describe("Shared Notes Service API", () => {
@@ -130,14 +131,14 @@ describe("Shared Notes Service API", () => {
       const res = await req("/notes", {
         method: "POST",
         auth: USER_KEY,
-        body: { title: "Test Note", body: longBody },
+        body: { title: `${TEST_PREFIX}Test Note`, body: longBody },
       });
       assert.equal(res.status, 201);
       const note = await res.json();
       assert.ok(note.id);
       noteId = note.id;
       createdTestNoteIds.add(note.id);
-      assert.equal(note.title, "Test Note");
+      assert.equal(note.title, `${TEST_PREFIX}Test Note`);
       assert.equal(note.body, longBody);
       assert.equal(note.snippet, "A".repeat(150));
       assert.equal(note.created_by, EXPECTED_USER);
@@ -150,7 +151,7 @@ describe("Shared Notes Service API", () => {
       assert.equal(res.status, 200);
       const note = await res.json();
       assert.equal(note.id, noteId);
-      assert.equal(note.title, "Test Note");
+      assert.equal(note.title, `${TEST_PREFIX}Test Note`);
       assert.equal(note.body, longBody);
       assert.equal(note.snippet, "A".repeat(150));
     });
@@ -160,14 +161,14 @@ describe("Shared Notes Service API", () => {
         method: "PUT",
         auth: USER_KEY,
         body: {
-          title: "Updated Title",
+          title: `${TEST_PREFIX}Updated Title`,
           body: "Updated Body Content",
           snippet: "Custom Blurb Override",
         },
       });
       assert.equal(res.status, 200);
       const note = await res.json();
-      assert.equal(note.title, "Updated Title");
+      assert.equal(note.title, `${TEST_PREFIX}Updated Title`);
       assert.equal(note.body, "Updated Body Content");
       assert.equal(note.snippet, "Custom Blurb Override");
     });
@@ -242,7 +243,7 @@ describe("Shared Notes Service API", () => {
         method: "POST",
         auth: USER_KEY,
         body: {
-          title: "UniquePineappleProject",
+          title: `${TEST_PREFIX}UniquePineappleProject`,
           body: "TopSecretDragonFormula in body",
           snippet: "GoldenPineappleSummary",
         },
@@ -301,7 +302,7 @@ describe("Shared Notes Service API", () => {
       const res = await req("/notes", {
         method: "POST",
         auth: USER_KEY,
-        body: { title: "Delete Me", body: "Ephemeral" },
+        body: { title: `${TEST_PREFIX}Delete Me`, body: "Ephemeral" },
       });
       assert.equal(res.status, 201);
       const note = await res.json();
@@ -434,8 +435,9 @@ describe("Shared Notes Service API", () => {
     });
   });
 
-  // Automated cleanup: permanently remove ONLY notes created by this test run
+  // Automated cleanup: permanently remove ONLY test notes created by this test run
   after(async () => {
+    // 1. Delete notes tracked by this test run
     for (const id of createdTestNoteIds) {
       try {
         await req(`/notes/${encodeURIComponent(id)}?permanent=true`, {
@@ -445,6 +447,24 @@ describe("Shared Notes Service API", () => {
       } catch {
         // Ignore cleanup errors
       }
+    }
+
+    // 2. Safety net: clean up any orphaned notes explicitly prefixed with *TEST*
+    try {
+      const leftoverRes = await req("/notes?q=*TEST*&status=all&limit=200", { auth: ADMIN_KEY });
+      if (leftoverRes.ok) {
+        const leftover = await leftoverRes.json();
+        for (const note of leftover.notes || []) {
+          if (note.title.startsWith(TEST_PREFIX)) {
+            await req(`/notes/${encodeURIComponent(note.id)}?permanent=true`, {
+              method: "DELETE",
+              auth: ADMIN_KEY,
+            });
+          }
+        }
+      }
+    } catch {
+      // Ignore safety net sweep errors
     }
   });
 });
