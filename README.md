@@ -45,6 +45,26 @@ Role assignment is managed via secrets:
 
 Every note records `title`, `snippet` (first 150ch of body by default, or custom blurb), `body`, `created_by`, `is_archived`, `is_deleted`, `created_at`, and `updated_at`.
 
+## Local Development & Testing
+
+To develop and test without touching production secrets or the remote database:
+
+```sh
+# 1. Initialize/apply migrations to local SQLite database
+npm run migrate:local
+
+# 2. Start local dev server (reads secrets from .dev.vars)
+npm run dev
+# Server ready on http://localhost:8787
+
+# 3. In another terminal, run tests locally against http://localhost:8787
+npm run test:local
+
+# 4. Use CLI tool locally
+npm run cli -- health --url=http://localhost:8787 --key=dev-key-admin
+npm run cli -- ls --url=http://localhost:8787 --key=dev-key-admin
+```
+
 ## Deploy (Cloudflare free tier)
 
 ```sh
