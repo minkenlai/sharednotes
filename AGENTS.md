@@ -7,9 +7,11 @@ This document defines repository-level instructions, workflows, and guardrails f
 ## 1. Secrets & Confidentiality Guardrails
 
 > [!IMPORTANT]
-> **Strict Secrets Protection**
+> **Strict Secrets & Account Confidentiality Protection**
 > - **NEVER print or echo raw API keys or secrets** from `.env`, `.dev.vars`, or memory into chat responses or artifacts.
 > - **Always mask keys** (e.g. `9c656b••••••••` or `[CONFIGURED]`).
+> - **NO COMMITTING ACCOUNT-SPECIFIC IDS OR TOKENS**: Never commit Cloudflare Account IDs, API tokens, user IDs, or environment secrets to Git.
+> - Always use GitHub Secrets (e.g., `${{ secrets.CLOUDFLARE_ACCOUNT_ID }}`) or `.dev.vars` / environment variables.
 > - Do not commit `.env`, `.dev.vars`, or actual keys to Git.
 > - Ensure all local secrets remain listed in `.gitignore`.
 

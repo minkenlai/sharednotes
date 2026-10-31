@@ -6,6 +6,7 @@
 - **NO CAT OF SENSITIVE FILES**: Do not use shell tools to dump \`.env\` or secret files directly into terminal outputs. Check variables programmatically or verify existence using keys-masked utilities.
 
 ## 2. Git & Version Control Safeguards
-- **IGNORE SECRETS**: Always verify that \`.env\`, \`.dev.vars\`, and \`.wrangler/\` remain in \`.gitignore\`.
-- **NO COMMITTING DEPLOYMENT SECRETS**: Keep `wrangler.jsonc` in version control with template placeholders (`REPLACE_WITH_D1_DATABASE_ID`) when committing to public or shared branches.
-- **KEY ROTATION**: When rotating keys, use the CLI's \`keys rotate\` command or automated pipes into \`npx wrangler secret put\` so secrets are transferred securely to Cloudflare without intermediate plaintext exposure.
+- **IGNORE SECRETS**: Always verify that `.env`, `.dev.vars`, and `.wrangler/` remain in `.gitignore`.
+- **NO COMMITTING ACCOUNT-SPECIFIC IDS OR SECRETS**: Never commit Cloudflare Account IDs, API tokens, user IDs, or environment secrets to Git or GitHub. Use GitHub Secrets (e.g., `${{ secrets.CLOUDFLARE_ACCOUNT_ID }}`) and local `.dev.vars` / `.env` exclusively.
+- **TEMPLATE PLACEHOLDERS**: Keep `wrangler.jsonc` in version control with template placeholders (`REPLACE_WITH_D1_DATABASE_ID`) when committing to public or shared branches.
+- **KEY ROTATION**: When rotating keys, use the CLI's `keys rotate` command or automated pipes into `npx wrangler secret put` so secrets are transferred securely to Cloudflare without intermediate plaintext exposure.
