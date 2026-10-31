@@ -13,10 +13,21 @@
 //   ADMIN_USERS secret: optional comma-separated list of owner names that have "admin" role.
 //   Defaults to "user" if unspecified.
 
-const json = (data, status = 200) =>
+const CORS_HEADERS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS",
+  "access-control-allow-headers": "Authorization, X-API-Key, Content-Type",
+  "access-control-max-age": "86400",
+};
+
+const json = (data, status = 200, headers = {}) =>
   new Response(JSON.stringify(data), {
     status,
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      ...CORS_HEADERS,
+      ...headers,
+    },
   });
 
 function splitList(value) {
@@ -34,6 +45,29 @@ function computeSnippet(customSnippet, body) {
     return body.slice(0, 150);
   }
   return "";
+}
+
+// Constant-time string comparison to prevent timing attacks
+function timingSafeEqualStr(a, b) {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  const encoder = new TextEncoder();
+  const bufA = encoder.encode(a);
+  const bufB = encoder.encode(b);
+  if (bufA.byteLength !== bufB.byteLength) return false;
+  let diff = 0;
+  for (let i = 0; i < bufA.byteLength; i++) {
+    diff |= bufA[i] ^ bufB[i];
+  }
+  return diff === 0;
+}
+
+// Safe URI decoding to prevent uncaught URIError crashes
+function safeDecodeURIComponent(val) {
+  try {
+    return decodeURIComponent(val);
+  } catch {
+    return null;
+  }
 }
 
 // Returns { owner, role } or null when unauthorized.
@@ -55,11 +89,20 @@ function authenticate(request, env) {
     }
   }
   if (!presented && headerKey) presented = headerKey.trim();
-  const idx = valid.indexOf(presented);
-  if (idx === -1) return null;
+  if (!presented) return null;
 
-  const owner = splitList(env.KEY_OWNERS)[idx] || "unknown";
-  const explicitRole = (splitList(env.KEY_ROLES)[idx] || "").toLowerCase();
+  let matchedIdx = -1;
+  for (let i = 0; i < valid.length; i++) {
+    if (timingSafeEqualStr(valid[i], presented)) {
+      matchedIdx = i;
+      break;
+    }
+  }
+
+  if (matchedIdx === -1) return null;
+
+  const owner = splitList(env.KEY_OWNERS)[matchedIdx] || "unknown";
+  const explicitRole = (splitList(env.KEY_ROLES)[matchedIdx] || "").toLowerCase();
   const adminUsers = splitList(env.ADMIN_USERS).map((u) => u.toLowerCase());
   const isAdmin = explicitRole === "admin" || adminUsers.includes(owner.toLowerCase());
   const role = isAdmin ? "admin" : "user";
@@ -67,12 +110,30 @@ function authenticate(request, env) {
   return { owner, role };
 }
 
+// Limits payload sizes and validates JSON
 async function readBody(request) {
+  const contentLength = parseInt(request.headers.get("content-length") || "0", 10);
+  if (contentLength > 1024 * 1024) {
+    return { error: "payload_too_large", message: "Request payload exceeds 1MB limit" };
+  }
+
   try {
     const data = await request.json();
     if (data === null || typeof data !== "object" || Array.isArray(data)) {
       return null;
     }
+
+    // Validate string field limits
+    if (typeof data.title === "string" && data.title.length > 500) {
+      return { error: "invalid_payload", message: "Title exceeds 500 character limit" };
+    }
+    if (typeof data.snippet === "string" && data.snippet.length > 1000) {
+      return { error: "invalid_payload", message: "Snippet exceeds 1,000 character limit" };
+    }
+    if (typeof data.body === "string" && data.body.length > 512 * 1024) {
+      return { error: "invalid_payload", message: "Body exceeds 500KB limit" };
+    }
+
     return data;
   } catch {
     return null;
@@ -81,6 +142,14 @@ async function readBody(request) {
 
 export default {
   async fetch(request, env) {
+    // Handle CORS preflight
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: CORS_HEADERS,
+      });
+    }
+
     try {
       const url = new URL(request.url);
       const parts = url.pathname.split("/").filter(Boolean);
@@ -187,6 +256,11 @@ export default {
       if (parts.length === 1 && request.method === "POST") {
         const body = await readBody(request);
         if (body === null) return json({ error: "invalid_json" }, 400);
+        if (body.error) {
+          const status = body.error === "payload_too_large" ? 413 : 400;
+          return json(body, status);
+        }
+
         const now = new Date().toISOString();
         const bodyText = typeof body.body === "string" ? body.body : "";
         const snippet = computeSnippet(body.snippet, bodyText);
@@ -222,7 +296,9 @@ export default {
 
       // /notes/:id routes
       if (parts.length === 2) {
-        const id = decodeURIComponent(parts[1]);
+        const id = safeDecodeURIComponent(parts[1]);
+        if (!id) return json({ error: "invalid_id" }, 400);
+
         const existing = await env.DB.prepare(
           "SELECT * FROM notes WHERE id = ?",
         )
@@ -248,6 +324,10 @@ export default {
           }
           const body = await readBody(request);
           if (body === null) return json({ error: "invalid_json" }, 400);
+          if (body.error) {
+            const status = body.error === "payload_too_large" ? 413 : 400;
+            return json(body, status);
+          }
 
           let isArchived = existing.is_archived;
           if (typeof body.is_archived === "boolean" || typeof body.is_archived === "number") {
@@ -304,7 +384,7 @@ export default {
               );
             }
             await env.DB.prepare("DELETE FROM notes WHERE id = ?").bind(id).run();
-            return new Response(null, { status: 204 });
+            return new Response(null, { status: 204, headers: CORS_HEADERS });
           }
 
           // Standard soft delete
@@ -313,7 +393,7 @@ export default {
           )
             .bind(new Date().toISOString(), id)
             .run();
-          return new Response(null, { status: 204 });
+          return new Response(null, { status: 204, headers: CORS_HEADERS });
         }
 
         return json({ error: "method_not_allowed" }, 405);
@@ -321,7 +401,9 @@ export default {
 
       // /notes/:id/:action routes (archive, unarchive, restore)
       if (parts.length === 3) {
-        const id = decodeURIComponent(parts[1]);
+        const id = safeDecodeURIComponent(parts[1]);
+        if (!id) return json({ error: "invalid_id" }, 400);
+
         const action = parts[2].toLowerCase();
 
         if (request.method !== "POST") {
@@ -397,7 +479,8 @@ export default {
 
       return json({ error: "not_found" }, 404);
     } catch (err) {
-      return json({ error: "internal", detail: String(err) }, 500);
+      console.error("Unhandled worker exception:", err);
+      return json({ error: "internal_error" }, 500);
     }
   },
 };

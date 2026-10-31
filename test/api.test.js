@@ -349,4 +349,37 @@ describe("Shared Notes Service API", () => {
       assert.equal(fetchRes.status, 404);
     });
   });
+
+  describe("Security & Input Validation", () => {
+    it("handles CORS OPTIONS preflight request", async () => {
+      const res = await req("/notes", { method: "OPTIONS" });
+      assert.equal(res.status, 204);
+      assert.equal(res.headers.get("access-control-allow-origin"), "*");
+      assert.ok(res.headers.get("access-control-allow-methods").includes("POST"));
+    });
+
+    it("includes CORS headers on standard API responses", async () => {
+      const res = await req("/health");
+      assert.equal(res.status, 200);
+      assert.equal(res.headers.get("access-control-allow-origin"), "*");
+    });
+
+    it("rejects malformed percent-encoded URI gracefully", async () => {
+      const res = await req("/notes/%E0%A4%A", { auth: USER_KEY });
+      assert.equal(res.status, 400);
+      const data = await res.json();
+      assert.equal(data.error, "invalid_id");
+    });
+
+    it("rejects oversized title (>500 chars)", async () => {
+      const res = await req("/notes", {
+        method: "POST",
+        auth: USER_KEY,
+        body: { title: "X".repeat(501), body: "Valid body" },
+      });
+      assert.equal(res.status, 400);
+      const data = await res.json();
+      assert.equal(data.error, "invalid_payload");
+    });
+  });
 });
