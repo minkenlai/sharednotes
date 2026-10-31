@@ -27,12 +27,17 @@ async function dispatch(request) {
 }
 
 describe("In-Runtime Worker Tests with Miniflare D1", () => {
-  it("GET /health returns 200 and ok: true", async () => {
+  it("GET /health returns 200 and ok: true with security headers", async () => {
     const res = await dispatch(makeReq("/health"));
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.ok).toBe(true);
     expect(data.service).toBe("sharednotes");
+
+    // Verify defensive security headers
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("x-frame-options")).toBe("DENY");
+    expect(res.headers.get("referrer-policy")).toBe("no-referrer");
   });
 
   it("GET /instructions returns public docs, plus admin section if admin key", async () => {

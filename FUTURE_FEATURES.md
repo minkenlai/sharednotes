@@ -173,3 +173,54 @@ Text revision history is largely repetitive string mutations. Compressing sequen
      SELECT * FROM read_ndjson('s3://sharednotes-archive/2026/*.jsonl.gz') WHERE author = 'alice';
      ```
    - Can also be loaded effortlessly into BigQuery, Snowflake, or ClickHouse.
+
+---
+
+## 6. SQLite FTS5 (Full-Text Search) Indexing for D1
+
+### Concept
+Currently, keyword search across notes (`GET /notes?q=<search_text>`) performs a substring match using SQL `LIKE '%<query>%'` across `title`, `snippet`, and `body`. While lightweight and fast for small personal stores, `LIKE '%...%'` requires a full table scan and does not support stemming, word tokenization, or relevance scoring.
+
+Cloudflare D1 natively supports the SQLite **FTS5 (Full-Text Search 5)** extension. Adding an external-content FTS5 virtual table allows sub-millisecond full-text searches with BM25 ranking without duplicating body storage.
+
+### Schema & Triggers
+```sql
+-- 1. Create FTS5 virtual table referencing the notes table
+CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
+  title,
+  snippet,
+  body,
+  content='notes',
+  content_rowid='rowid'
+);
+
+-- 2. Triggers to automatically keep the FTS index in sync with notes
+CREATE TRIGGER IF NOT EXISTS notes_ai AFTER INSERT ON notes BEGIN
+  INSERT INTO notes_fts(rowid, title, snippet, body) VALUES (new.rowid, new.title, new.snippet, new.body);
+END;
+
+CREATE TRIGGER IF NOT EXISTS notes_ad AFTER DELETE ON notes BEGIN
+  INSERT INTO notes_fts(notes_fts, rowid, title, snippet, body) VALUES ('delete', old.rowid, old.title, old.snippet, old.body);
+END;
+
+CREATE TRIGGER IF NOT EXISTS notes_au AFTER UPDATE ON notes BEGIN
+  INSERT INTO notes_fts(notes_fts, rowid, title, snippet, body) VALUES ('delete', old.rowid, old.title, old.snippet, old.body);
+  INSERT INTO notes_fts(rowid, title, snippet, body) VALUES (new.rowid, new.title, new.snippet, new.body);
+END;
+```
+
+### Search Query with BM25 Ranking
+```sql
+SELECT n.id, n.title, n.snippet, n.content_type, n.created_by, n.created_at, n.updated_at,
+       bm25(notes_fts) AS rank
+FROM notes_fts
+JOIN notes n ON notes_fts.rowid = n.rowid
+WHERE notes_fts MATCH ? AND n.is_deleted = 0 AND n.is_archived = 0
+ORDER BY rank
+LIMIT ?;
+```
+
+### Benefits
+- **Sub-millisecond query execution**: Eliminates full-table text scans as note counts grow.
+- **BM25 Relevance Scoring**: Returns the most relevant notes at the top rather than solely ordering by `updated_at`.
+- **Advanced Query Syntax**: Supports Boolean operators (`AND`, `OR`, `NOT`), prefix queries (`meet*`), and phrase queries (`"product sync"`).

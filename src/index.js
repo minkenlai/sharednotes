@@ -22,12 +22,23 @@ const CORS_HEADERS = {
   "access-control-max-age": "86400",
 };
 
+const SECURITY_HEADERS = {
+  "x-content-type-options": "nosniff",
+  "referrer-policy": "no-referrer",
+  "x-frame-options": "DENY",
+};
+
+const COMMON_HEADERS = {
+  ...CORS_HEADERS,
+  ...SECURITY_HEADERS,
+};
+
 const json = (data, status = 200, headers = {}) =>
   new Response(JSON.stringify(data), {
     status,
     headers: {
       "content-type": "application/json",
-      ...CORS_HEADERS,
+      ...COMMON_HEADERS,
       ...headers,
     },
   });
@@ -157,6 +168,7 @@ async function readBody(request) {
   }
 }
 
+/** @type {ExportedHandler<Env>} */
 export default {
   async fetch(request, env, ctx) {
     // Handle CORS preflight
@@ -186,7 +198,7 @@ export default {
           status: 200,
           headers: {
             "content-type": "text/markdown; charset=utf-8",
-            ...CORS_HEADERS,
+            ...COMMON_HEADERS,
           },
         });
       }
@@ -364,7 +376,7 @@ export default {
               status: 200,
               headers: {
                 "content-type": existing.content_type || "text/markdown",
-                ...CORS_HEADERS,
+                ...COMMON_HEADERS,
               },
             });
           }
