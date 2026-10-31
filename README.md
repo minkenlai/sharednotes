@@ -18,6 +18,7 @@ Role assignment is managed via secrets:
 | Method | Path | Permission | Description |
 |---|---|---|---|
 | GET | `/health` | Public | Returns `{"ok":true,"service":"sharednotes"}`. |
+| GET | `/connector.zip` | Public | Downloads Muse custom connector package (`custom.sharednotes`). |
 | GET | `/notes` | User / Admin | List notes, newest first. Supported query params below. |
 | GET | `/notes/:id` | User / Admin | Get one note JSON object. Returns 404 for deleted notes if not admin. |
 | GET | `/notes/:id?raw=true` | User / Admin | Get raw note body served with the note's `Content-Type` header. |

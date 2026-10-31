@@ -35,6 +35,8 @@ SharedNotes is a lightweight REST API for persistent note-taking and shared cont
   Returns this instruction manual in Markdown format. If accessed with an Admin API key, admin operations are dynamically appended.
 - **`GET /health`**
   Returns `{"ok": true, "service": "sharednotes"}`.
+- **`GET /connector.zip`**
+  Downloads the Muse custom connector package (`custom.sharednotes`) containing connector definitions, Python CLI helpers, and installation instructions for Muse agents.
 
 ### B. List Notes (Optimized for Agent Context)
 - **`GET /notes`**

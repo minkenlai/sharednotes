@@ -67,6 +67,14 @@ describe("Shared Notes Service API", () => {
       assert.ok(text.includes("# SharedNotes Service"));
     });
 
+    it("serves static Muse connector at /connector.zip", async () => {
+      const res = await req("/connector.zip");
+      assert.equal(res.status, 200);
+      assert.ok(res.headers.get("content-type").includes("zip"));
+      const buffer = await res.arrayBuffer();
+      assert.ok(buffer.byteLength > 1000);
+    });
+
     it("serves agent manual at /llms.txt without admin section by default", async () => {
       const res = await req("/llms.txt");
       assert.equal(res.status, 200);

@@ -21,5 +21,6 @@ yarn-error.log*
 # OS and IDE files
 .DS_Store
 Thumbs.db
+*:Zone.Identifier
 .vscode/
 .idea/
