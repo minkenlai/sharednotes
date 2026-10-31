@@ -4,7 +4,11 @@
   "description": "Tiny shared-notes REST service for two people and their Muses",
   "private": true,
   "type": "module",
+  "bin": {
+    "sharednotes": "./bin/cli.js"
+  },
   "scripts": {
+    "cli": "./bin/cli.js",
     "deploy": "wrangler deploy",
     "migrate": "wrangler d1 migrations apply sharednotes --remote",
     "test": "node --test test/api.test.js"

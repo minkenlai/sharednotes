@@ -65,6 +65,35 @@ npx wrangler deploy
 
 Deploy prints the URL, like `https://sharednotes.<subdomain>.workers.dev`.
 
+## CLI Tool
+
+A standalone CLI tool is included in `bin/cli.js` (and available as `npm run cli -- <args>` or directly `./bin/cli.js`). It reads configuration directly from `.env` (`WORKER_URL`, `API_KEY`, `TEST_ADMIN_KEY`, `TEST_USER_KEY`).
+
+```sh
+# Health and auth check
+npm run cli -- health
+npm run cli -- whoami
+
+# List notes
+npm run cli -- ls
+npm run cli -- ls --status=archived
+npm run cli -- ls --status=deleted --as=admin
+
+# Create, read, and edit
+npm run cli -- create -t "Todo" -b "Buy milk"
+npm run cli -- get <id>
+npm run cli -- edit <id> -t "New Title" -b "New Body"
+
+# Archive and unarchive
+npm run cli -- archive <id>
+npm run cli -- unarchive <id>
+
+# Delete and restore
+npm run cli -- rm <id>                          # Soft delete
+npm run cli -- rm <id> --permanent --as=admin   # Hard delete (admin)
+npm run cli -- restore <id> --as=admin          # Restore deleted note (admin)
+```
+
 ## Test
 
 ```sh
