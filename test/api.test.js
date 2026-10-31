@@ -1,4 +1,4 @@
-import { describe, it } from "node:test";
+import { describe, it, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -30,6 +30,9 @@ const req = (path, options = {}) => {
   }
   return fetch(url, { ...options, headers });
 };
+
+// Track test-created notes so only test data is cleaned up
+const createdTestNoteIds = new Set();
 
 describe("Shared Notes Service API", () => {
   describe("Health & Self-Documentation", () => {
@@ -133,6 +136,7 @@ describe("Shared Notes Service API", () => {
       const note = await res.json();
       assert.ok(note.id);
       noteId = note.id;
+      createdTestNoteIds.add(note.id);
       assert.equal(note.title, "Test Note");
       assert.equal(note.body, longBody);
       assert.equal(note.snippet, "A".repeat(150));
@@ -246,6 +250,7 @@ describe("Shared Notes Service API", () => {
       assert.equal(res.status, 201);
       const note = await res.json();
       searchableNoteId = note.id;
+      createdTestNoteIds.add(note.id);
     });
 
     it("searches by title keyword with ?q=", async () => {
@@ -301,6 +306,7 @@ describe("Shared Notes Service API", () => {
       assert.equal(res.status, 201);
       const note = await res.json();
       noteId = note.id;
+      createdTestNoteIds.add(note.id);
     });
 
     it("regular user can soft-delete the note", async () => {
@@ -426,5 +432,19 @@ describe("Shared Notes Service API", () => {
       const data = await res.json();
       assert.equal(data.error, "invalid_payload");
     });
+  });
+
+  // Automated cleanup: permanently remove ONLY notes created by this test run
+  after(async () => {
+    for (const id of createdTestNoteIds) {
+      try {
+        await req(`/notes/${encodeURIComponent(id)}?permanent=true`, {
+          method: "DELETE",
+          auth: ADMIN_KEY,
+        });
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
   });
 });
