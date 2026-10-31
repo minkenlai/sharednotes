@@ -37,10 +37,10 @@ ${c.bold}USAGE${c.reset}
 
 ${c.bold}COMMANDS${c.reset}
   ${c.green}health${c.reset}                     Check service health
-  ${c.green}list${c.reset}, ${c.green}ls${c.reset}                 List notes (active by default)
+  ${c.green}list${c.reset}, ${c.green}ls${c.reset}                 List notes (active by default, returns snippet preview)
   ${c.green}get${c.reset} <id>                  Display note details and full body
   ${c.green}create${c.reset}, ${c.green}add${c.reset}               Create a new note
-  ${c.green}edit${c.reset}, ${c.green}update${c.reset} <id>          Update note title and/or body
+  ${c.green}edit${c.reset}, ${c.green}update${c.reset} <id>          Update note title, body, and/or snippet
   ${c.green}archive${c.reset} <id>              Archive a note
   ${c.green}unarchive${c.reset} <id>            Unarchive a note
   ${c.green}delete${c.reset}, ${c.green}rm${c.reset} <id>            Soft-delete a note
@@ -49,9 +49,13 @@ ${c.bold}COMMANDS${c.reset}
 
 ${c.bold}OPTIONS${c.reset}
   ${c.yellow}--status${c.reset}=<status>         Filter notes by status: active, archived, deleted, all (list)
+  ${c.yellow}--since${c.reset}=<timestamp>       Delta sync: list items updated after timestamp (ISO-8601)
+  ${c.yellow}-q, --query${c.reset}=<text>       Search query across titles, snippets, and bodies
+  ${c.yellow}--full${c.reset}                     Include full body in list response (default: snippets only)
   ${c.yellow}--limit${c.reset}=<number>          Limit number of returned notes (default 50)
   ${c.yellow}-t, --title${c.reset}=<text>        Note title (create / edit)
   ${c.yellow}-b, --body${c.reset}=<text>         Note body (create / edit)
+  ${c.yellow}-s, --snippet${c.reset}=<text>      Custom snippet override (first 150ch of body by default)
   ${c.yellow}--permanent${c.reset}              Hard-delete permanently (admin only)
   ${c.yellow}--as${c.reset}=<admin|user>        Select key profile from .env (default: admin or user)
   ${c.yellow}--key${c.reset}=<api-key>          Explicit API key override
@@ -61,6 +65,9 @@ ${c.bold}OPTIONS${c.reset}
 
 ${c.bold}EXAMPLES${c.reset}
   $ sharednotes ls
+  $ sharednotes ls -q "grocery"
+  $ sharednotes ls --since="2026-10-30T12:00:00Z"
+  $ sharednotes ls --full
   $ sharednotes ls --status=archived
   $ sharednotes ls --status=deleted --as=admin
   $ sharednotes create -t "Todo" -b "Buy milk"
@@ -86,6 +93,8 @@ function parseCliArgs(args) {
       parsed.flags.json = true;
     } else if (arg === "--permanent") {
       parsed.flags.permanent = true;
+    } else if (arg === "--full") {
+      parsed.flags.full = true;
     } else if (arg.startsWith("--as=")) {
       parsed.flags.as = arg.slice(5);
     } else if (arg === "--as" && i + 1 < args.length) {
@@ -102,6 +111,14 @@ function parseCliArgs(args) {
       parsed.flags.status = arg.slice(9);
     } else if (arg === "--status" && i + 1 < args.length) {
       parsed.flags.status = args[++i];
+    } else if (arg.startsWith("--since=")) {
+      parsed.flags.since = arg.slice(8);
+    } else if (arg === "--since" && i + 1 < args.length) {
+      parsed.flags.since = args[++i];
+    } else if (arg.startsWith("-q=") || arg.startsWith("--query=")) {
+      parsed.flags.query = arg.slice(arg.indexOf("=") + 1);
+    } else if ((arg === "-q" || arg === "--query") && i + 1 < args.length) {
+      parsed.flags.query = args[++i];
     } else if (arg.startsWith("--limit=")) {
       parsed.flags.limit = arg.slice(8);
     } else if (arg === "--limit" && i + 1 < args.length) {
@@ -114,6 +131,10 @@ function parseCliArgs(args) {
       parsed.flags.body = arg.slice(arg.indexOf("=") + 1);
     } else if ((arg === "-b" || arg === "--body") && i + 1 < args.length) {
       parsed.flags.body = args[++i];
+    } else if (arg.startsWith("-s=") || arg.startsWith("--snippet=")) {
+      parsed.flags.snippet = arg.slice(arg.indexOf("=") + 1);
+    } else if ((arg === "-s" || arg === "--snippet") && i + 1 < args.length) {
+      parsed.flags.snippet = args[++i];
     } else if (arg.startsWith("-")) {
       console.warn(`${c.yellow}Unknown option: ${arg}${c.reset}`);
     } else if (!parsed.command) {
@@ -248,6 +269,9 @@ async function main() {
       const queryParams = new URLSearchParams();
       if (flags.status) queryParams.set("status", flags.status);
       if (flags.limit) queryParams.set("limit", flags.limit);
+      if (flags.since) queryParams.set("since", flags.since);
+      if (flags.query) queryParams.set("q", flags.query);
+      if (flags.full) queryParams.set("full", "true");
 
       const qs = queryParams.toString();
       const endpoint = `/notes${qs ? `?${qs}` : ""}`;
@@ -276,9 +300,13 @@ async function main() {
         return;
       }
 
-      console.log(
-        `${c.bold}Found ${notes.length} note(s)${flags.status ? ` [filter: ${flags.status}]` : ""}:${c.reset}\n`
-      );
+      const filters = [];
+      if (flags.status) filters.push(`status: ${flags.status}`);
+      if (flags.query) filters.push(`query: "${flags.query}"`);
+      if (flags.since) filters.push(`since: ${flags.since}`);
+      const filterStr = filters.length > 0 ? ` [${filters.join(", ")}]` : "";
+
+      console.log(`${c.bold}Found ${notes.length} note(s)${filterStr}:${c.reset}\n`);
 
       for (const note of notes) {
         let tag = "";
@@ -290,10 +318,12 @@ async function main() {
 
         console.log(`  ${c.cyan}${note.id}${c.reset}${tag}`);
         console.log(`  ${c.bold}${note.title || "(Untitled)"}${c.reset}`);
-        if (note.body) {
-          const preview = note.body.replace(/\n/g, " ");
-          const shortBody = preview.length > 70 ? preview.slice(0, 67) + "..." : preview;
-          console.log(`  ${c.dim}${shortBody}${c.reset}`);
+
+        const textContent = flags.full ? (note.body || note.snippet) : note.snippet;
+        if (textContent) {
+          const preview = textContent.replace(/\n/g, " ");
+          const shortText = (!flags.full && preview.length > 90) ? preview.slice(0, 87) + "..." : preview;
+          console.log(`  ${c.dim}${shortText}${c.reset}`);
         }
         console.log(
           `  ${c.gray}by ${note.created_by || "unknown"} • updated ${formatDate(note.updated_at)}${c.reset}\n`
@@ -333,8 +363,11 @@ async function main() {
       console.log(`${c.gray}ID:         ${note.id}`);
       console.log(`Created by: ${note.created_by}`);
       console.log(`Created at: ${formatDate(note.created_at)}`);
-      console.log(`Updated at: ${formatDate(note.updated_at)}${c.reset}\n`);
-      console.log("─".repeat(60));
+      console.log(`Updated at: ${formatDate(note.updated_at)}${c.reset}`);
+      if (note.snippet && note.snippet !== note.body?.slice(0, 150)) {
+        console.log(`${c.gray}Snippet:    ${note.snippet}${c.reset}`);
+      }
+      console.log("\n" + "─".repeat(60));
       console.log(note.body || `${c.dim}(No content)${c.reset}`);
       console.log("─".repeat(60) + "\n");
       break;
@@ -345,16 +378,20 @@ async function main() {
     case "new": {
       let title = flags.title || positionals[0] || "";
       let body = flags.body || positionals[1] || "";
+      let snippet = flags.snippet;
 
-      if (!title && !body) {
+      if (!title && !body && !snippet) {
         console.error(`${c.red}Error: Note title or body required.${c.reset}`);
-        console.error(`Usage: sharednotes create -t "Title" -b "Body"`);
+        console.error(`Usage: sharednotes create -t "Title" -b "Body" [-s "Custom snippet"]`);
         process.exit(1);
       }
 
+      const payload = { title, body };
+      if (snippet) payload.snippet = snippet;
+
       const res = await apiRequest(config, "/notes", {
         method: "POST",
-        body: { title, body },
+        body: payload,
       });
 
       if (!res.ok) {
@@ -366,8 +403,9 @@ async function main() {
         console.log(JSON.stringify(res.data, null, 2));
       } else {
         console.log(`${c.green}✔ Note created successfully!${c.reset}`);
-        console.log(`ID:    ${c.cyan}${res.data.id}${c.reset}`);
-        console.log(`Title: ${res.data.title}`);
+        console.log(`ID:      ${c.cyan}${res.data.id}${c.reset}`);
+        console.log(`Title:   ${res.data.title}`);
+        console.log(`Snippet: ${c.dim}${res.data.snippet}${c.reset}`);
       }
       break;
     }
@@ -383,9 +421,10 @@ async function main() {
       const payload = {};
       if (flags.title !== undefined) payload.title = flags.title;
       if (flags.body !== undefined) payload.body = flags.body;
+      if (flags.snippet !== undefined) payload.snippet = flags.snippet;
 
       if (Object.keys(payload).length === 0) {
-        console.error(`${c.yellow}Nothing to update. Specify -t "New Title" and/or -b "New Body"${c.reset}`);
+        console.error(`${c.yellow}Nothing to update. Specify -t "Title", -b "Body", and/or -s "Snippet"${c.reset}`);
         process.exit(1);
       }
 

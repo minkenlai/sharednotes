@@ -26,6 +26,16 @@ function splitList(value) {
     .filter(Boolean);
 }
 
+function computeSnippet(customSnippet, body) {
+  if (typeof customSnippet === "string" && customSnippet.trim().length > 0) {
+    return customSnippet.trim();
+  }
+  if (typeof body === "string") {
+    return body.slice(0, 150);
+  }
+  return "";
+}
+
 // Returns { owner, role } or null when unauthorized.
 function authenticate(request, env) {
   const valid = splitList(env.API_KEYS);
@@ -99,6 +109,9 @@ export default {
         const statusParam = (url.searchParams.get("status") || "").toLowerCase();
         const archivedParam = url.searchParams.get("archived");
         const deletedParam = url.searchParams.get("deleted");
+        const sinceParam = url.searchParams.get("since");
+        const qParam = (url.searchParams.get("q") || "").trim();
+        const full = url.searchParams.get("full") === "true";
 
         let isDeletedFilter;
         let isArchivedFilter;
@@ -147,8 +160,23 @@ export default {
           bindings.push(isArchivedFilter);
         }
 
+        if (sinceParam) {
+          conditions.push("updated_at > ?");
+          bindings.push(sinceParam);
+        }
+
+        if (qParam) {
+          conditions.push("(title LIKE ? OR snippet LIKE ? OR body LIKE ?)");
+          const likePattern = `%${qParam}%`;
+          bindings.push(likePattern, likePattern, likePattern);
+        }
+
+        const selectCols = full
+          ? "id, title, COALESCE(NULLIF(snippet, ''), SUBSTR(body, 1, 150)) AS snippet, body, created_by, is_archived, is_deleted, created_at, updated_at"
+          : "id, title, COALESCE(NULLIF(snippet, ''), SUBSTR(body, 1, 150)) AS snippet, created_by, is_archived, is_deleted, created_at, updated_at";
+
         const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-        const sql = `SELECT * FROM notes ${whereClause} ORDER BY updated_at DESC LIMIT ?`;
+        const sql = `SELECT ${selectCols} FROM notes ${whereClause} ORDER BY updated_at DESC LIMIT ?`;
         bindings.push(limit);
 
         const rows = await env.DB.prepare(sql).bind(...bindings).all();
@@ -160,10 +188,14 @@ export default {
         const body = await readBody(request);
         if (body === null) return json({ error: "invalid_json" }, 400);
         const now = new Date().toISOString();
+        const bodyText = typeof body.body === "string" ? body.body : "";
+        const snippet = computeSnippet(body.snippet, bodyText);
+
         const note = {
           id: crypto.randomUUID(),
           title: typeof body.title === "string" ? body.title : "",
-          body: typeof body.body === "string" ? body.body : "",
+          snippet,
+          body: bodyText,
           created_by: owner,
           is_archived: body.is_archived || body.archived ? 1 : 0,
           is_deleted: 0,
@@ -171,11 +203,12 @@ export default {
           updated_at: now,
         };
         await env.DB.prepare(
-          "INSERT INTO notes (id, title, body, created_by, is_archived, is_deleted, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO notes (id, title, snippet, body, created_by, is_archived, is_deleted, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
           .bind(
             note.id,
             note.title,
+            note.snippet,
             note.body,
             note.created_by,
             note.is_archived,
@@ -201,7 +234,11 @@ export default {
           if (existing.is_deleted === 1 && role !== "admin") {
             return json({ error: "not_found" }, 404);
           }
-          return json(existing);
+          const note = {
+            ...existing,
+            snippet: existing.snippet || computeSnippet(undefined, existing.body),
+          };
+          return json(note);
         }
 
         if (request.method === "PUT") {
@@ -219,17 +256,35 @@ export default {
             isArchived = body.archived ? 1 : 0;
           }
 
+          const newBody = typeof body.body === "string" ? body.body : existing.body;
+          let newSnippet;
+          if (typeof body.snippet === "string") {
+            newSnippet = body.snippet.trim();
+          } else if (typeof body.body === "string") {
+            newSnippet = computeSnippet(undefined, newBody);
+          } else {
+            newSnippet = existing.snippet || computeSnippet(undefined, existing.body);
+          }
+
           const updated = {
             ...existing,
             title: typeof body.title === "string" ? body.title : existing.title,
-            body: typeof body.body === "string" ? body.body : existing.body,
+            snippet: newSnippet,
+            body: newBody,
             is_archived: isArchived,
             updated_at: new Date().toISOString(),
           };
           await env.DB.prepare(
-            "UPDATE notes SET title = ?, body = ?, is_archived = ?, updated_at = ? WHERE id = ?",
+            "UPDATE notes SET title = ?, snippet = ?, body = ?, is_archived = ?, updated_at = ? WHERE id = ?",
           )
-            .bind(updated.title, updated.body, updated.is_archived, updated.updated_at, id)
+            .bind(
+              updated.title,
+              updated.snippet,
+              updated.body,
+              updated.is_archived,
+              updated.updated_at,
+              id,
+            )
             .run();
           return json(updated);
         }
@@ -294,7 +349,12 @@ export default {
           )
             .bind(now, id)
             .run();
-          return json({ ...existing, is_deleted: 0, updated_at: now });
+          return json({
+            ...existing,
+            snippet: existing.snippet || computeSnippet(undefined, existing.body),
+            is_deleted: 0,
+            updated_at: now,
+          });
         }
 
         // Only admins can interact with a note that is deleted
@@ -309,7 +369,12 @@ export default {
           )
             .bind(now, id)
             .run();
-          return json({ ...existing, is_archived: 1, updated_at: now });
+          return json({
+            ...existing,
+            snippet: existing.snippet || computeSnippet(undefined, existing.body),
+            is_archived: 1,
+            updated_at: now,
+          });
         }
 
         if (action === "unarchive") {
@@ -319,7 +384,12 @@ export default {
           )
             .bind(now, id)
             .run();
-          return json({ ...existing, is_archived: 0, updated_at: now });
+          return json({
+            ...existing,
+            snippet: existing.snippet || computeSnippet(undefined, existing.body),
+            is_archived: 0,
+            updated_at: now,
+          });
         }
 
         return json({ error: "not_found" }, 404);

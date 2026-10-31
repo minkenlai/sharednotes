@@ -30,6 +30,9 @@ Role assignment is managed via secrets:
 
 ### Query Parameters for `GET /notes`
 
+- `?q=<query>`: Search keyword across titles, snippets, and bodies.
+- `?since=<timestamp>`: Delta sync filter. Returns only notes updated after the given ISO-8601 timestamp (e.g. `?since=2026-10-30T15:00:00Z`).
+- `?full=true`: Includes full `body` in list response. (By default, `body` is omitted to preserve context tokens; only `snippet` preview is returned).
 - `?limit=50`: Number of notes to return (default 50, min 1, max 200).
 - `?status=active|archived|deleted|all`:
   - `active` (default): Only active, non-archived, non-deleted notes (`is_deleted = 0 AND is_archived = 0`).
@@ -40,7 +43,7 @@ Role assignment is managed via secrets:
   - `?archived=true`: Filter for archived notes.
   - `?deleted=true`: Filter for deleted notes (**Admin only**).
 
-Every note records `created_by`, `is_archived`, `is_deleted`, `created_at`, and `updated_at`. Errors are JSON: `{"error": "unauthorized"}`, `{"error": "forbidden"}`, `{"error": "not_found"}`, `{"error": "invalid_json"}`.
+Every note records `title`, `snippet` (first 150ch of body by default, or custom blurb), `body`, `created_by`, `is_archived`, `is_deleted`, `created_at`, and `updated_at`.
 
 ## Deploy (Cloudflare free tier)
 

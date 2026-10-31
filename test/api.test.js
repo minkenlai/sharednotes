@@ -1,9 +1,22 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import process from "node:process";
 
-const BASE_URL = process.env.BASE_URL || "https://sharednotes.<your-subdomain>.workers.dev";
-const ADMIN_KEY = process.env.TEST_ADMIN_KEY || "test-admin-key-12345";
-const USER_KEY = process.env.TEST_USER_KEY || "test-user-key-67890";
+const envPath = path.resolve(process.cwd(), ".env");
+if (fs.existsSync(envPath) && typeof process.loadEnvFile === "function") {
+  try {
+    process.loadEnvFile(envPath);
+  } catch {}
+}
+
+const configuredKeys = (process.env.API_KEYS || "").split(",").map((s) => s.trim()).filter(Boolean);
+const configuredOwners = (process.env.KEY_OWNERS || "").split(",").map((s) => s.trim()).filter(Boolean);
+const BASE_URL = process.env.BASE_URL || process.env.WORKER_URL || "https://sharednotes.<your-subdomain>.workers.dev";
+const ADMIN_KEY = process.env.TEST_ADMIN_KEY || configuredKeys[0] || "test-admin-key-12345";
+const USER_KEY = process.env.TEST_USER_KEY || configuredKeys[1] || "test-user-key-67890";
+const EXPECTED_USER = configuredOwners[1] || "test-user";
 
 const req = (path, options = {}) => {
   const url = `${BASE_URL}${path}`;
@@ -63,42 +76,71 @@ describe("Shared Notes Service API", () => {
 
   describe("CRUD & Flag Operations", () => {
     let noteId;
+    const longBody = "A".repeat(300);
 
-    it("creates a new note as regular user", async () => {
+    it("creates a new note with auto-generated 150ch snippet", async () => {
       const res = await req("/notes", {
         method: "POST",
         auth: USER_KEY,
-        body: { title: "Test Note", body: "Hello World" },
+        body: { title: "Test Note", body: longBody },
       });
       assert.equal(res.status, 201);
       const note = await res.json();
       assert.ok(note.id);
+      noteId = note.id;
       assert.equal(note.title, "Test Note");
-      assert.equal(note.body, "Hello World");
-      assert.equal(note.created_by, "test-user");
+      assert.equal(note.body, longBody);
+      assert.equal(note.snippet, "A".repeat(150));
+      assert.equal(note.created_by, EXPECTED_USER);
       assert.equal(note.is_archived, 0);
       assert.equal(note.is_deleted, 0);
-      noteId = note.id;
     });
 
-    it("retrieves the note by ID", async () => {
+    it("retrieves the note by ID with full body and snippet", async () => {
       const res = await req(`/notes/${noteId}`, { auth: USER_KEY });
       assert.equal(res.status, 200);
       const note = await res.json();
       assert.equal(note.id, noteId);
       assert.equal(note.title, "Test Note");
+      assert.equal(note.body, longBody);
+      assert.equal(note.snippet, "A".repeat(150));
     });
 
-    it("updates the note", async () => {
+    it("updates note with custom snippet override", async () => {
       const res = await req(`/notes/${noteId}`, {
         method: "PUT",
         auth: USER_KEY,
-        body: { title: "Updated Title", body: "Updated Body" },
+        body: {
+          title: "Updated Title",
+          body: "Updated Body Content",
+          snippet: "Custom Blurb Override",
+        },
       });
       assert.equal(res.status, 200);
       const note = await res.json();
       assert.equal(note.title, "Updated Title");
-      assert.equal(note.body, "Updated Body");
+      assert.equal(note.body, "Updated Body Content");
+      assert.equal(note.snippet, "Custom Blurb Override");
+    });
+
+    it("list by default excludes body and includes snippet", async () => {
+      const res = await req("/notes", { auth: USER_KEY });
+      assert.equal(res.status, 200);
+      const data = await res.json();
+      const note = data.notes.find((n) => n.id === noteId);
+      assert.ok(note);
+      assert.equal(note.snippet, "Custom Blurb Override");
+      assert.equal(note.body, undefined);
+    });
+
+    it("list with ?full=true includes full body", async () => {
+      const res = await req("/notes?full=true", { auth: USER_KEY });
+      assert.equal(res.status, 200);
+      const data = await res.json();
+      const note = data.notes.find((n) => n.id === noteId);
+      assert.ok(note);
+      assert.equal(note.snippet, "Custom Blurb Override");
+      assert.equal(note.body, "Updated Body Content");
     });
 
     it("archives the note", async () => {
@@ -138,6 +180,67 @@ describe("Shared Notes Service API", () => {
       const listRes = await req("/notes", { auth: USER_KEY });
       const listData = await listRes.json();
       assert.ok(listData.notes.some((n) => n.id === noteId));
+    });
+  });
+
+  describe("Search (?q=) and Delta Sync (?since=)", () => {
+    let searchableNoteId;
+    let baselineTimestamp;
+
+    it("prepares a searchable note", async () => {
+      baselineTimestamp = new Date(Date.now() - 2000).toISOString();
+      const res = await req("/notes", {
+        method: "POST",
+        auth: USER_KEY,
+        body: {
+          title: "UniquePineappleProject",
+          body: "TopSecretDragonFormula in body",
+          snippet: "GoldenPineappleSummary",
+        },
+      });
+      assert.equal(res.status, 201);
+      const note = await res.json();
+      searchableNoteId = note.id;
+    });
+
+    it("searches by title keyword with ?q=", async () => {
+      const res = await req("/notes?q=UniquePineapple", { auth: USER_KEY });
+      assert.equal(res.status, 200);
+      const data = await res.json();
+      assert.ok(data.notes.some((n) => n.id === searchableNoteId));
+    });
+
+    it("searches by body keyword with ?q=", async () => {
+      const res = await req("/notes?q=DragonFormula", { auth: USER_KEY });
+      assert.equal(res.status, 200);
+      const data = await res.json();
+      assert.ok(data.notes.some((n) => n.id === searchableNoteId));
+    });
+
+    it("returns empty when query does not match", async () => {
+      const res = await req("/notes?q=NonExistentSuperStringZzz", { auth: USER_KEY });
+      assert.equal(res.status, 200);
+      const data = await res.json();
+      assert.equal(data.notes.length, 0);
+    });
+
+    it("filters notes updated after a timestamp with ?since=", async () => {
+      const res = await req(`/notes?since=${encodeURIComponent(baselineTimestamp)}`, {
+        auth: USER_KEY,
+      });
+      assert.equal(res.status, 200);
+      const data = await res.json();
+      assert.ok(data.notes.some((n) => n.id === searchableNoteId));
+    });
+
+    it("returns empty when ?since= is in the future", async () => {
+      const futureTimestamp = new Date(Date.now() + 100000).toISOString();
+      const res = await req(`/notes?since=${encodeURIComponent(futureTimestamp)}`, {
+        auth: USER_KEY,
+      });
+      assert.equal(res.status, 200);
+      const data = await res.json();
+      assert.equal(data.notes.length, 0);
     });
   });
 
