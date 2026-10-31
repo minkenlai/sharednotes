@@ -56,48 +56,120 @@ ALTER TABLE notes ADD COLUMN content_type TEXT NOT NULL DEFAULT 'text/markdown';
 
 ---
 
-## 3. Audit Logging
+## 3. Pinned & Read-Only Notes (House Rules & System Norms)
 
-### Purpose
-Track who took what action, providing accountability between users and automated agents.
+### Concept
+Allow specific notes to act as team "handbooks", convention guides, or shared agent norms.
 
-### Schema (`audit_logs`)
+### Schema Addition
 ```sql
-CREATE TABLE IF NOT EXISTS audit_logs (
-  id TEXT PRIMARY KEY,
-  note_id TEXT,
-  actor TEXT NOT NULL,
-  role TEXT NOT NULL,
-  action TEXT NOT NULL, -- create, update, archive, unarchive, soft_delete, restore, hard_delete
-  details TEXT,         -- JSON payload with relevant metadata (e.g. changed fields)
-  created_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_audit_logs_note ON audit_logs(note_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON audit_logs(actor, created_at DESC);
+ALTER TABLE notes ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE notes ADD COLUMN is_readonly INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS idx_notes_pinned ON notes(is_pinned DESC, updated_at DESC);
 ```
+
+### Behavior
+- **Pinned Notes**: Float to the top of note lists (`ORDER BY is_pinned DESC, updated_at DESC`).
+- **Read-Only Notes**: Regular users and agents can read, but modifications (`PUT`, `DELETE`) require `admin` permissions.
 
 ---
 
-## 4. Historical Versioning & Revisions
+## 4. Hot / Cold Timeline Architecture & Temporal Modeling
 
 ### Concept
-Track revisions to prevent accidental data loss, see agent vs human modifications, and allow rolling back changes.
+Separate hot operational reads from the cold historical ledger for sub-millisecond edge performance.
 
-### Schema (`note_revisions`)
-```sql
-CREATE TABLE IF NOT EXISTS note_revisions (
-  id TEXT PRIMARY KEY,
-  note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
-  version_number INTEGER NOT NULL,
-  title TEXT NOT NULL,
-  body TEXT NOT NULL,
-  content_type TEXT NOT NULL DEFAULT 'text/markdown',
-  edited_by TEXT NOT NULL,
-  created_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_revisions_note_ver ON note_revisions(note_id, version_number DESC);
+```text
+       ┌────────────────────────┐
+       │     Incoming Write     │
+       └───────────┬────────────┘
+                   │
+         ┌─────────┴─────────┐
+         ▼                   ▼
+┌──────────────────┐  ┌───────────────────┐
+│   notes (Hot)    │  │notes_timeline(Cold│
+│ (Current State)  │  │ (Append-Only Log) │
+└──────────────────┘  └─────────┬─────────┘
+                                │
+                    (Periodic Worker Cron)
+                                │
+                                ▼
+                      ┌───────────────────┐
+                      │ Cloudflare R2 / DW│
+                      │ (Compressed .gz)  │
+                      └───────────────────┘
 ```
 
-### Design Considerations
-- **Retention / Pruning**: Cap revisions to the last 10–20 edits per note to prevent SQLite database bloat.
-- **Rollback API**: `POST /notes/:id/revisions/:version/revert` to restore a previous revision cleanly.
+### Schema
+
+#### 1. Hot Operational Table (`notes`)
+Stores only the current active state:
+```sql
+CREATE TABLE IF NOT EXISTS notes (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL DEFAULT '',
+  snippet TEXT NOT NULL DEFAULT '',
+  body TEXT NOT NULL DEFAULT '',
+  created_by TEXT NOT NULL DEFAULT '',
+  is_archived INTEGER NOT NULL DEFAULT 0,
+  deleted_at TEXT, -- NULL = active, Past = deleted, Future = TTL expiration
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_notes_active ON notes(deleted_at, is_archived, updated_at DESC);
+```
+
+#### 2. Cold Timeline Ledger (`notes_timeline`)
+Append-only changelog capturing state across time:
+```sql
+CREATE TABLE IF NOT EXISTS notes_timeline (
+  timeline_id TEXT PRIMARY KEY,
+  note_id TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  snippet TEXT NOT NULL,
+  body TEXT NOT NULL,
+  author TEXT NOT NULL,
+  action TEXT NOT NULL, -- create, update, archive, unarchive, delete, restore
+  recorded_at TEXT NOT NULL,
+  deleted_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_timeline_note ON notes_timeline(note_id, recorded_at ASC);
+CREATE INDEX IF NOT EXISTS idx_timeline_cull ON notes_timeline(recorded_at);
+```
+
+### Dual-Purpose `deleted_at` (Soft-Delete + Future TTL)
+- **`deleted_at IS NULL`**: Active, persistent note.
+- **`deleted_at <= NOW()`**: Soft-deleted at that historical moment.
+- **`deleted_at > NOW()`**: **Scheduled TTL Expiration** (e.g. ephemeral agent task that automatically disappears after 24h without needing a background job).
+
+---
+
+## 5. Timeline Culling, Compression & Data Warehouse Offloading
+
+### High Compressibility of Note History
+Text revision history is largely repetitive string mutations. Compressing sequential note bodies with **gzip**, **Brotli**, or **zstandard (zstd)** achieves **80–90% compression ratios**.
+
+### Offloading Pipeline (Cloudflare Worker Cron + R2)
+1. **Worker Cron Trigger**: Run a scheduled task once a month (or weekly):
+   ```toml
+   [triggers]
+   crons = ["0 0 1 * *"] # Midnight on the 1st of every month
+   ```
+2. **Batch & Extract**:
+   ```sql
+   SELECT * FROM notes_timeline WHERE recorded_at < datetime('now', '-90 days');
+   ```
+3. **Compress & Ship to R2**:
+   - Stream rows into compressed JSONL: `archive/2026/timeline-2026-Q3.jsonl.gz`.
+   - Store in Cloudflare R2 ($0.015/GB/mo, 10 GB free tier, zero egress fees).
+4. **Prune D1**:
+   ```sql
+   DELETE FROM notes_timeline WHERE recorded_at < datetime('now', '-90 days');
+   ```
+5. **Analytics & Data Warehouse Querying**:
+   - The compressed archives in R2 can be queried directly in-place using **DuckDB**:
+     ```sql
+     SELECT * FROM read_ndjson('s3://sharednotes-archive/2026/*.jsonl.gz') WHERE author = 'alice';
+     ```
+   - Can also be loaded effortlessly into BigQuery, Snowflake, or ClickHouse.
