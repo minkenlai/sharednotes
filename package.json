@@ -13,10 +13,14 @@
     "deploy": "wrangler deploy",
     "migrate:local": "wrangler d1 migrations apply sharednotes --local",
     "migrate:remote": "wrangler d1 migrations apply sharednotes --remote",
-    "test": "node --test test/api.test.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:remote": "node --test test/api.test.js",
     "test:local": "BASE_URL=http://localhost:8787 TEST_ADMIN_KEY=dev-key-admin TEST_USER_KEY=dev-key-user TEST_USER_OWNER=user node --test test/api.test.js"
   },
   "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.4.11",
+    "vitest": "^5.0.5",
     "wrangler": "^4.156.0"
   }
 }

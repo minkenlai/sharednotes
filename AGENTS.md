@@ -29,6 +29,8 @@ This document defines repository-level instructions, workflows, and guardrails f
 
 ## 3. Testing Guidelines
 
+- Default test suite (isolated in-runtime tests with in-memory D1): `npm test`
+- Interactive watch mode: `npm run test:watch`
 - When running tests locally against `http://localhost:8787`, use `npm run test:local`.
-- When running tests against remote deployment, use `npm run test`.
-- Clean up any test records created in the database after test suites finish.
+- When running tests specifically against remote deployment, use `npm run test:remote`.
+- Clean up any test records created in the database after remote/local test suites finish.

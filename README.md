@@ -53,6 +53,12 @@ Every note records `title`, `snippet` (first 150ch of body by default, or custom
 To develop and test without touching production secrets or the remote database:
 
 ```sh
+# Run fast in-runtime tests (isolated in-memory D1, no dev server needed)
+npm test
+
+# Or run tests with hot-reloading watch mode
+npm run test:watch
+
 # 1. Initialize/apply migrations to local SQLite database
 npm run migrate:local
 
@@ -76,7 +82,7 @@ npx wrangler login
 npx wrangler d1 create sharednotes
 ```
 
-Copy the `database_id` from that output into `wrangler.toml`, then:
+Copy the `database_id` from that output into `wrangler.jsonc`, then:
 
 ```sh
 npx wrangler d1 migrations apply sharednotes --remote

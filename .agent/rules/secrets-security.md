@@ -7,5 +7,5 @@
 
 ## 2. Git & Version Control Safeguards
 - **IGNORE SECRETS**: Always verify that \`.env\`, \`.dev.vars\`, and \`.wrangler/\` remain in \`.gitignore\`.
-- **NO COMMITTING DEPLOYMENT SECRETS**: Keep \`wrangler.toml\` in version control with template placeholders (\`REPLACE_WITH_D1_DATABASE_ID\`) when committing to public or shared branches.
+- **NO COMMITTING DEPLOYMENT SECRETS**: Keep `wrangler.jsonc` in version control with template placeholders (`REPLACE_WITH_D1_DATABASE_ID`) when committing to public or shared branches.
 - **KEY ROTATION**: When rotating keys, use the CLI's \`keys rotate\` command or automated pipes into \`npx wrangler secret put\` so secrets are transferred securely to Cloudflare without intermediate plaintext exposure.

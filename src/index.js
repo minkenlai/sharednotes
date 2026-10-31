@@ -49,16 +49,25 @@ function computeSnippet(customSnippet, body) {
   return "";
 }
 
-// Constant-time string comparison to prevent timing attacks
-function timingSafeEqualStr(a, b) {
+// Constant-time string comparison using fixed-size SHA-256 hashes to prevent timing attacks and length leaks
+async function timingSafeEqualStr(a, b) {
   if (typeof a !== "string" || typeof b !== "string") return false;
   const encoder = new TextEncoder();
-  const bufA = encoder.encode(a);
-  const bufB = encoder.encode(b);
-  if (bufA.byteLength !== bufB.byteLength) return false;
+  const [hashA, hashB] = await Promise.all([
+    crypto.subtle.digest("SHA-256", encoder.encode(a)),
+    crypto.subtle.digest("SHA-256", encoder.encode(b)),
+  ]);
+
+  if (typeof crypto.subtle?.timingSafeEqual === "function") {
+    return crypto.subtle.timingSafeEqual(hashA, hashB);
+  }
+
+  // Fallback for runtimes without crypto.subtle.timingSafeEqual (e.g. Node WebCrypto)
+  const uA = new Uint8Array(hashA);
+  const uB = new Uint8Array(hashB);
   let diff = 0;
-  for (let i = 0; i < bufA.byteLength; i++) {
-    diff |= bufA[i] ^ bufB[i];
+  for (let i = 0; i < 32; i++) {
+    diff |= uA[i] ^ uB[i];
   }
   return diff === 0;
 }
@@ -73,7 +82,7 @@ function safeDecodeURIComponent(val) {
 }
 
 // Returns { owner, role } or null when unauthorized.
-function authenticate(request, env) {
+async function authenticate(request, env) {
   const valid = splitList(env.API_KEYS);
   if (valid.length === 0) return null;
   const header = request.headers.get("Authorization") || "";
@@ -95,7 +104,7 @@ function authenticate(request, env) {
 
   let matchedIdx = -1;
   for (let i = 0; i < valid.length; i++) {
-    if (timingSafeEqualStr(valid[i], presented)) {
+    if (await timingSafeEqualStr(valid[i], presented)) {
       matchedIdx = i;
       break;
     }
@@ -149,7 +158,7 @@ async function readBody(request) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     // Handle CORS preflight
     if (request.method === "OPTIONS") {
       return new Response(null, {
@@ -167,7 +176,7 @@ export default {
         parts.length === 0 ||
         (parts.length === 1 && ["instructions", "docs", "llms.txt"].includes(parts[0].toLowerCase()))
       ) {
-        const auth = authenticate(request, env);
+        const auth = await authenticate(request, env);
         const isAdmin = auth && auth.role === "admin";
         const content = isAdmin
           ? `${INSTRUCTIONS}\n${getAdminSection(auth.owner)}`
@@ -190,7 +199,7 @@ export default {
         return json({ error: "not_found" }, 404);
       }
 
-      const auth = authenticate(request, env);
+      const auth = await authenticate(request, env);
       if (auth === null) {
         return json({ error: "unauthorized" }, 401);
       }
@@ -541,7 +550,15 @@ export default {
 
       return json({ error: "not_found" }, 404);
     } catch (err) {
-      console.error("Unhandled worker exception:", err);
+      console.error(
+        JSON.stringify({
+          level: "error",
+          message: "Unhandled worker exception",
+          error: err instanceof Error ? err.stack || err.message : String(err),
+          method: request.method,
+          path: typeof request.url === "string" ? new URL(request.url).pathname : undefined,
+        }),
+      );
       return json({ error: "internal_error" }, 500);
     }
   },

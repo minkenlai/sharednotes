@@ -1,0 +1,45 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "sharednotes",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-30",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "assets": {
+    "directory": "./public"
+  },
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 1
+    }
+  },
+  // Fill in database_id after `wrangler d1 create sharednotes`.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "sharednotes",
+      "database_id": "1213288c-d635-4261-b6cf-2dfac39a3cc4"
+    }
+  ]
+
+  // Secrets (required):
+  // API_KEYS: comma-separated API keys, one per person (e.g. "key-for-alice,key-for-bob")
+  // Set with: wrangler secret put API_KEYS
+
+  // Secrets (optional):
+  // KEY_OWNERS: parallel names for API_KEYS, e.g. "alice,bob"
+  // Set with: wrangler secret put KEY_OWNERS
+  //
+  // KEY_ROLES: parallel roles for API_KEYS, e.g. "admin,user"
+  // Set with: wrangler secret put KEY_ROLES
+  //
+  // ADMIN_USERS: alternative comma-separated list of admin owner names, e.g. "alice"
+  // Set with: wrangler secret put ADMIN_USERS
+}
