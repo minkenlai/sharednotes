@@ -32,13 +32,42 @@ const req = (path, options = {}) => {
 };
 
 describe("Shared Notes Service API", () => {
-  describe("Health Check", () => {
+  describe("Health & Self-Documentation", () => {
     it("returns 200 and ok: true without auth", async () => {
       const res = await req("/health");
       assert.equal(res.status, 200);
       const data = await res.json();
       assert.equal(data.ok, true);
       assert.equal(data.service, "sharednotes");
+    });
+
+    it("serves agent manual at /", async () => {
+      const res = await req("/");
+      assert.equal(res.status, 200);
+      const text = await res.text();
+      assert.ok(text.includes("# SharedNotes Service"));
+      assert.ok(res.headers.get("content-type").includes("text/markdown"));
+    });
+
+    it("serves agent manual at /instructions", async () => {
+      const res = await req("/instructions");
+      assert.equal(res.status, 200);
+      const text = await res.text();
+      assert.ok(text.includes("# SharedNotes Service"));
+    });
+
+    it("serves agent manual at /docs", async () => {
+      const res = await req("/docs");
+      assert.equal(res.status, 200);
+      const text = await res.text();
+      assert.ok(text.includes("# SharedNotes Service"));
+    });
+
+    it("serves agent manual at /llms.txt", async () => {
+      const res = await req("/llms.txt");
+      assert.equal(res.status, 200);
+      const text = await res.text();
+      assert.ok(text.includes("# SharedNotes Service"));
     });
   });
 
