@@ -19,9 +19,10 @@ Role assignment is managed via secrets:
 |---|---|---|---|
 | GET | `/health` | Public | Returns `{"ok":true,"service":"sharednotes"}`. |
 | GET | `/notes` | User / Admin | List notes, newest first. Supported query params below. |
-| GET | `/notes/:id` | User / Admin | Get one note. Returns 404 for deleted notes if not admin. |
-| POST | `/notes` | User / Admin | JSON `{"title": "...", "body": "...", "archived": false}`. Returns note with id, 201. |
-| PUT | `/notes/:id` | User / Admin | JSON with `title`, `body`, and/or `archived` boolean. Returns updated note. |
+| GET | `/notes/:id` | User / Admin | Get one note JSON object. Returns 404 for deleted notes if not admin. |
+| GET | `/notes/:id?raw=true` | User / Admin | Get raw note body served with the note's `Content-Type` header. |
+| POST | `/notes` | User / Admin | JSON `{"title": "...", "body": "...", "content_type": "text/markdown", "archived": false}`. Returns note with id, 201. |
+| PUT | `/notes/:id` | User / Admin | JSON with `title`, `body`, `snippet`, `content_type`, and/or `archived` boolean. Returns updated note. |
 | DELETE | `/notes/:id` | User / Admin | Soft deletes note (`is_deleted = 1`). Returns 204. |
 | DELETE | `/notes/:id?permanent=true` | Admin only | Permanently removes note from database. Returns 204. |
 | POST | `/notes/:id/archive` | User / Admin | Marks note as archived (`is_archived = 1`). |
@@ -31,6 +32,7 @@ Role assignment is managed via secrets:
 ### Query Parameters for `GET /notes`
 
 - `?q=<query>`: Search keyword across titles, snippets, and bodies.
+- `?type=<mime>` (or `?content_type=<mime>`): Filter notes by MIME type (e.g. `application/json`, `text/plain`, `text/markdown`).
 - `?since=<timestamp>`: Delta sync filter. Returns only notes updated after the given ISO-8601 timestamp (e.g. `?since=2026-10-30T15:00:00Z`).
 - `?full=true`: Includes full `body` in list response. (By default, `body` is omitted to preserve context tokens; only `snippet` preview is returned).
 - `?limit=50`: Number of notes to return (default 50, min 1, max 200).
@@ -43,7 +45,7 @@ Role assignment is managed via secrets:
   - `?archived=true`: Filter for archived notes.
   - `?deleted=true`: Filter for deleted notes (**Admin only**).
 
-Every note records `title`, `snippet` (first 150ch of body by default, or custom blurb), `body`, `created_by`, `is_archived`, `is_deleted`, `created_at`, and `updated_at`.
+Every note records `title`, `snippet` (first 150ch of body by default, or custom blurb), `body`, `content_type` (default `'text/markdown'`), `created_by`, `is_archived`, `is_deleted`, `created_at`, and `updated_at`.
 
 ## Local Development & Testing
 

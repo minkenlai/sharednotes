@@ -15,7 +15,8 @@ SharedNotes is a lightweight REST API for persistent note-taking and shared cont
   "id": "uuid-v4-string",
   "title": "Short descriptive title",
   "snippet": "Short teaser or blurb (default: first 150 chars of body)",
-  "body": "Full markdown or plain-text content",
+  "body": "Full note content (markdown, plain text, json, etc.)",
+  "content_type": "text/markdown",
   "created_by": "username",
   "is_archived": 0,
   "is_deleted": 0,
@@ -39,6 +40,7 @@ SharedNotes is a lightweight REST API for persistent note-taking and shared cont
 - **`GET /notes`**
 - **Query Params**:
   - `q=<search_text>`: Keyword search across note titles, snippets, and bodies.
+  - `type=<content_type>` (or `content_type=<type>`): Filter by MIME type (e.g. `?type=application/json`).
   - `since=<ISO_TIMESTAMP>`: **Delta sync**. Returns only notes updated after this timestamp (e.g. `?since=2026-10-30T15:00:00Z`).
   - `full=true`: Includes full `body` in each note object (default is `false`, returning only `snippet`).
   - `status=active` (default): Active, non-archived notes.
@@ -53,6 +55,7 @@ SharedNotes is a lightweight REST API for persistent note-taking and shared cont
         "id": "4d82f835-2ec4-445c-b744-77ffd015183e",
         "title": "Meeting Summary",
         "snippet": "Discussed roadmap and next steps for context scaling...",
+        "content_type": "text/markdown",
         "created_by": "username",
         "is_archived": 0,
         "is_deleted": 0,
@@ -65,7 +68,9 @@ SharedNotes is a lightweight REST API for persistent note-taking and shared cont
 
 ### C. Read Full Note
 - **`GET /notes/{id}`**
-- **Response**: `200 OK` with full note object (including `body` and `snippet`), or `404 Not Found`.
+  Returns `200 OK` with full note JSON object (including `body`, `snippet`, and `content_type`), or `404 Not Found`.
+- **`GET /notes/{id}?raw=true`**
+  Returns the raw note body directly as the HTTP response body with its corresponding `Content-Type` header (e.g., `text/markdown`, `application/json`).
 
 ### D. Create Note
 - **`POST /notes`**
@@ -74,18 +79,21 @@ SharedNotes is a lightweight REST API for persistent note-taking and shared cont
   {
     "title": "Meeting Summary",
     "body": "- Discussed project roadmap\n- Next sync on Friday",
-    "snippet": "Optional blurb overriding the default 150ch body preview"
+    "snippet": "Optional blurb overriding the default 150ch body preview",
+    "content_type": "text/markdown"
   }
   ```
+  *(`content_type` defaults to `"text/markdown"` if omitted. Common alternatives: `"application/json"`, `"text/plain"`, `"text/csv"`)*
 - **Response**: `201 Created` with created note object.
 
 ### E. Update Note
 - **`PUT /notes/{id}`**
-- **Body**: Supply `title`, `body`, and/or `snippet`:
+- **Body**: Supply `title`, `body`, `snippet`, and/or `content_type`:
   ```json
   {
     "body": "Updated content with additions.",
-    "snippet": "Updated quick summary"
+    "snippet": "Updated quick summary",
+    "content_type": "text/markdown"
   }
   ```
 - **Response**: `200 OK` with updated note object.

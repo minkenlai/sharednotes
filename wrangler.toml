@@ -6,7 +6,7 @@ compatibility_date = "2026-10-30"
 [[d1_databases]]
 binding = "DB"
 database_name = "sharednotes"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "1213288c-d635-4261-b6cf-2dfac39a3cc4"
 
 # Secrets (required):
 # API_KEYS: comma-separated API keys, one per person (e.g. "key-for-alice,key-for-bob")

@@ -69,6 +69,8 @@ ${c.bold}OPTIONS${c.reset}
   ${c.yellow}-t, --title${c.reset}=<text>        Note title (create / edit)
   ${c.yellow}-b, --body${c.reset}=<text>         Note body (create / edit)
   ${c.yellow}-s, --snippet${c.reset}=<text>      Custom snippet override
+  ${c.yellow}--type${c.reset}=<mime>             Content type (e.g. text/markdown, application/json)
+  ${c.yellow}--raw${c.reset}                      Output raw body directly without formatting (get)
   ${c.yellow}--permanent${c.reset}              Hard-delete permanently (admin only)
   ${c.yellow}--owners${c.reset}=<u1,u2>          Target owners for key rotation (default: alice,bob)
   ${c.yellow}--roles${c.reset}=<r1,r2>           Target roles for key rotation (default: admin,user)
@@ -101,6 +103,8 @@ function parseCliArgs(args) {
       parsed.flags.help = true;
     } else if (arg === "--json") {
       parsed.flags.json = true;
+    } else if (arg === "--raw") {
+      parsed.flags.raw = true;
     } else if (arg === "--permanent") {
       parsed.flags.permanent = true;
     } else if (arg === "--full") {
@@ -161,6 +165,10 @@ function parseCliArgs(args) {
       parsed.flags.snippet = arg.slice(arg.indexOf("=") + 1);
     } else if ((arg === "-s" || arg === "--snippet") && i + 1 < args.length) {
       parsed.flags.snippet = args[++i];
+    } else if (arg.startsWith("--type=") || arg.startsWith("--content-type=")) {
+      parsed.flags.type = arg.slice(arg.indexOf("=") + 1);
+    } else if ((arg === "--type" || arg === "--content-type") && i + 1 < args.length) {
+      parsed.flags.type = args[++i];
     } else if (arg.startsWith("-")) {
       console.warn(`${c.yellow}Unknown option: ${arg}${c.reset}`);
     } else if (!parsed.command) {
@@ -429,6 +437,7 @@ async function main() {
       if (flags.limit) queryParams.set("limit", flags.limit);
       if (flags.since) queryParams.set("since", flags.since);
       if (flags.query) queryParams.set("q", flags.query);
+      if (flags.type) queryParams.set("type", flags.type);
       if (flags.full) queryParams.set("full", "true");
 
       const qs = queryParams.toString();
@@ -460,6 +469,7 @@ async function main() {
 
       const filters = [];
       if (flags.status) filters.push(`status: ${flags.status}`);
+      if (flags.type) filters.push(`type: ${flags.type}`);
       if (flags.query) filters.push(`query: "${flags.query}"`);
       if (flags.since) filters.push(`since: ${flags.since}`);
       const filterStr = filters.length > 0 ? ` [${filters.join(", ")}]` : "";
@@ -472,6 +482,9 @@ async function main() {
           tag = ` ${c.red}[DELETED]${c.reset}`;
         } else if (note.is_archived) {
           tag = ` ${c.yellow}[ARCHIVED]${c.reset}`;
+        }
+        if (note.content_type && note.content_type !== "text/markdown") {
+          tag += ` ${c.blue}[${note.content_type}]${c.reset}`;
         }
 
         console.log(`  ${c.cyan}${note.id}${c.reset}${tag}`);
@@ -497,6 +510,23 @@ async function main() {
         process.exit(1);
       }
 
+      if (flags.raw) {
+        try {
+          const rawRes = await fetch(`${config.url}/notes/${encodeURIComponent(id)}?raw=true`, {
+            headers: config.key ? { Authorization: `Bearer ${config.key}` } : {},
+          });
+          if (!rawRes.ok) {
+            console.error(`${c.red}Error (${rawRes.status}):${c.reset}`, await rawRes.text());
+            process.exit(1);
+          }
+          process.stdout.write(await rawRes.text());
+          return;
+        } catch (err) {
+          console.error(`${c.red}Network error:${c.reset}`, err.message);
+          process.exit(1);
+        }
+      }
+
       const res = await apiRequest(config, `/notes/${encodeURIComponent(id)}`);
       if (!res.ok) {
         if (config.json) {
@@ -518,12 +548,13 @@ async function main() {
       else if (note.is_archived) tag = ` ${c.yellow}[ARCHIVED]${c.reset}`;
 
       console.log(`\n${c.bold}${c.cyan}${note.title || "(Untitled)"}${c.reset}${tag}`);
-      console.log(`${c.gray}ID:         ${note.id}`);
-      console.log(`Created by: ${note.created_by}`);
-      console.log(`Created at: ${formatDate(note.created_at)}`);
-      console.log(`Updated at: ${formatDate(note.updated_at)}${c.reset}`);
+      console.log(`${c.gray}ID:           ${note.id}`);
+      console.log(`Type:         ${note.content_type || "text/markdown"}`);
+      console.log(`Created by:   ${note.created_by}`);
+      console.log(`Created at:   ${formatDate(note.created_at)}`);
+      console.log(`Updated at:   ${formatDate(note.updated_at)}${c.reset}`);
       if (note.snippet && note.snippet !== note.body?.slice(0, 150)) {
-        console.log(`${c.gray}Snippet:    ${note.snippet}${c.reset}`);
+        console.log(`${c.gray}Snippet:      ${note.snippet}${c.reset}`);
       }
       console.log("\n" + "─".repeat(60));
       console.log(note.body || `${c.dim}(No content)${c.reset}`);
@@ -546,6 +577,7 @@ async function main() {
 
       const payload = { title, body };
       if (snippet) payload.snippet = snippet;
+      if (flags.type) payload.content_type = flags.type;
 
       const res = await apiRequest(config, "/notes", {
         method: "POST",
@@ -563,6 +595,7 @@ async function main() {
         console.log(`${c.green}✔ Note created successfully!${c.reset}`);
         console.log(`ID:      ${c.cyan}${res.data.id}${c.reset}`);
         console.log(`Title:   ${res.data.title}`);
+        console.log(`Type:    ${res.data.content_type || "text/markdown"}`);
         console.log(`Snippet: ${c.dim}${res.data.snippet}${c.reset}`);
       }
       break;
@@ -580,9 +613,10 @@ async function main() {
       if (flags.title !== undefined) payload.title = flags.title;
       if (flags.body !== undefined) payload.body = flags.body;
       if (flags.snippet !== undefined) payload.snippet = flags.snippet;
+      if (flags.type !== undefined) payload.content_type = flags.type;
 
       if (Object.keys(payload).length === 0) {
-        console.error(`${c.yellow}Nothing to update. Specify -t "Title", -b "Body", and/or -s "Snippet"${c.reset}`);
+        console.error(`${c.yellow}Nothing to update. Specify -t "Title", -b "Body", -s "Snippet", and/or --type "Type"${c.reset}`);
         process.exit(1);
       }
 
@@ -600,6 +634,9 @@ async function main() {
         console.log(JSON.stringify(res.data, null, 2));
       } else {
         console.log(`${c.green}✔ Note updated successfully!${c.reset}`);
+        if (res.data.content_type) {
+          console.log(`Type:    ${res.data.content_type}`);
+        }
       }
       break;
     }

@@ -135,6 +135,12 @@ async function readBody(request) {
     if (typeof data.body === "string" && data.body.length > 512 * 1024) {
       return { error: "invalid_payload", message: "Body exceeds 500KB limit" };
     }
+    if (typeof data.content_type === "string" && data.content_type.length > 100) {
+      return { error: "invalid_payload", message: "content_type exceeds 100 character limit" };
+    }
+    if (typeof data.contentType === "string" && data.contentType.length > 100) {
+      return { error: "invalid_payload", message: "content_type exceeds 100 character limit" };
+    }
 
     return data;
   } catch {
@@ -202,6 +208,7 @@ export default {
         const deletedParam = url.searchParams.get("deleted");
         const sinceParam = url.searchParams.get("since");
         const qParam = (url.searchParams.get("q") || "").trim();
+        const contentTypeParam = (url.searchParams.get("content_type") || url.searchParams.get("type") || "").trim();
         const full = url.searchParams.get("full") === "true";
 
         let isDeletedFilter;
@@ -256,6 +263,11 @@ export default {
           bindings.push(sinceParam);
         }
 
+        if (contentTypeParam) {
+          conditions.push("content_type = ?");
+          bindings.push(contentTypeParam);
+        }
+
         if (qParam) {
           conditions.push("(title LIKE ? OR snippet LIKE ? OR body LIKE ?)");
           const likePattern = `%${qParam}%`;
@@ -263,8 +275,8 @@ export default {
         }
 
         const selectCols = full
-          ? "id, title, COALESCE(NULLIF(snippet, ''), SUBSTR(body, 1, 150)) AS snippet, body, created_by, is_archived, is_deleted, created_at, updated_at"
-          : "id, title, COALESCE(NULLIF(snippet, ''), SUBSTR(body, 1, 150)) AS snippet, created_by, is_archived, is_deleted, created_at, updated_at";
+          ? "id, title, COALESCE(NULLIF(snippet, ''), SUBSTR(body, 1, 150)) AS snippet, body, content_type, created_by, is_archived, is_deleted, created_at, updated_at"
+          : "id, title, COALESCE(NULLIF(snippet, ''), SUBSTR(body, 1, 150)) AS snippet, content_type, created_by, is_archived, is_deleted, created_at, updated_at";
 
         const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
         const sql = `SELECT ${selectCols} FROM notes ${whereClause} ORDER BY updated_at DESC LIMIT ?`;
@@ -286,12 +298,17 @@ export default {
         const now = new Date().toISOString();
         const bodyText = typeof body.body === "string" ? body.body : "";
         const snippet = computeSnippet(body.snippet, bodyText);
+        const contentType =
+          (typeof body.content_type === "string" && body.content_type.trim()) ||
+          (typeof body.contentType === "string" && body.contentType.trim()) ||
+          "text/markdown";
 
         const note = {
           id: crypto.randomUUID(),
           title: typeof body.title === "string" ? body.title : "",
           snippet,
           body: bodyText,
+          content_type: contentType,
           created_by: owner,
           is_archived: body.is_archived || body.archived ? 1 : 0,
           is_deleted: 0,
@@ -299,13 +316,14 @@ export default {
           updated_at: now,
         };
         await env.DB.prepare(
-          "INSERT INTO notes (id, title, snippet, body, created_by, is_archived, is_deleted, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO notes (id, title, snippet, body, content_type, created_by, is_archived, is_deleted, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
           .bind(
             note.id,
             note.title,
             note.snippet,
             note.body,
+            note.content_type,
             note.created_by,
             note.is_archived,
             note.is_deleted,
@@ -332,8 +350,18 @@ export default {
           if (existing.is_deleted === 1 && role !== "admin") {
             return json({ error: "not_found" }, 404);
           }
+          if (url.searchParams.get("raw") === "true") {
+            return new Response(existing.body, {
+              status: 200,
+              headers: {
+                "content-type": existing.content_type || "text/markdown",
+                ...CORS_HEADERS,
+              },
+            });
+          }
           const note = {
             ...existing,
+            content_type: existing.content_type || "text/markdown",
             snippet: existing.snippet || computeSnippet(undefined, existing.body),
           };
           return json(note);
@@ -358,6 +386,13 @@ export default {
             isArchived = body.archived ? 1 : 0;
           }
 
+          let newContentType = existing.content_type || "text/markdown";
+          if (typeof body.content_type === "string" && body.content_type.trim()) {
+            newContentType = body.content_type.trim();
+          } else if (typeof body.contentType === "string" && body.contentType.trim()) {
+            newContentType = body.contentType.trim();
+          }
+
           const newBody = typeof body.body === "string" ? body.body : existing.body;
           let newSnippet;
           if (typeof body.snippet === "string") {
@@ -373,16 +408,18 @@ export default {
             title: typeof body.title === "string" ? body.title : existing.title,
             snippet: newSnippet,
             body: newBody,
+            content_type: newContentType,
             is_archived: isArchived,
             updated_at: new Date().toISOString(),
           };
           await env.DB.prepare(
-            "UPDATE notes SET title = ?, snippet = ?, body = ?, is_archived = ?, updated_at = ? WHERE id = ?",
+            "UPDATE notes SET title = ?, snippet = ?, body = ?, content_type = ?, is_archived = ?, updated_at = ? WHERE id = ?",
           )
             .bind(
               updated.title,
               updated.snippet,
               updated.body,
+              updated.content_type,
               updated.is_archived,
               updated.updated_at,
               id,
@@ -455,6 +492,7 @@ export default {
             .run();
           return json({
             ...existing,
+            content_type: existing.content_type || "text/markdown",
             snippet: existing.snippet || computeSnippet(undefined, existing.body),
             is_deleted: 0,
             updated_at: now,
@@ -475,6 +513,7 @@ export default {
             .run();
           return json({
             ...existing,
+            content_type: existing.content_type || "text/markdown",
             snippet: existing.snippet || computeSnippet(undefined, existing.body),
             is_archived: 1,
             updated_at: now,
@@ -490,6 +529,7 @@ export default {
             .run();
           return json({
             ...existing,
+            content_type: existing.content_type || "text/markdown",
             snippet: existing.snippet || computeSnippet(undefined, existing.body),
             is_archived: 0,
             updated_at: now,

@@ -402,6 +402,100 @@ describe("Shared Notes Service API", () => {
     });
   });
 
+  describe("Content-Type & Raw Output", () => {
+    let jsonNoteId;
+    let mdNoteId;
+
+    it("defaults content_type to text/markdown when unspecified", async () => {
+      const res = await req("/notes", {
+        method: "POST",
+        auth: USER_KEY,
+        body: { title: `${TEST_PREFIX}Markdown Default`, body: "# Heading" },
+      });
+      assert.equal(res.status, 201);
+      const note = await res.json();
+      mdNoteId = note.id;
+      createdTestNoteIds.add(note.id);
+      assert.equal(note.content_type, "text/markdown");
+    });
+
+    it("creates note with explicit custom content_type", async () => {
+      const jsonContent = JSON.stringify({ state: "active", counter: 42 });
+      const res = await req("/notes", {
+        method: "POST",
+        auth: USER_KEY,
+        body: {
+          title: `${TEST_PREFIX}JSON Data Note`,
+          body: jsonContent,
+          content_type: "application/json",
+        },
+      });
+      assert.equal(res.status, 201);
+      const note = await res.json();
+      jsonNoteId = note.id;
+      createdTestNoteIds.add(note.id);
+      assert.equal(note.content_type, "application/json");
+      assert.equal(note.body, jsonContent);
+    });
+
+    it("filters notes list by ?type=application/json", async () => {
+      const res = await req("/notes?type=application/json", { auth: USER_KEY });
+      assert.equal(res.status, 200);
+      const data = await res.json();
+      assert.ok(data.notes.some((n) => n.id === jsonNoteId));
+      assert.ok(!data.notes.some((n) => n.id === mdNoteId));
+    });
+
+    it("filters notes list by ?content_type=text/markdown", async () => {
+      const res = await req("/notes?content_type=text/markdown", { auth: USER_KEY });
+      assert.equal(res.status, 200);
+      const data = await res.json();
+      assert.ok(data.notes.some((n) => n.id === mdNoteId));
+      assert.ok(!data.notes.some((n) => n.id === jsonNoteId));
+    });
+
+    it("updates content_type on existing note", async () => {
+      const res = await req(`/notes/${jsonNoteId}`, {
+        method: "PUT",
+        auth: USER_KEY,
+        body: {
+          content_type: "text/plain",
+        },
+      });
+      assert.equal(res.status, 200);
+      const note = await res.json();
+      assert.equal(note.content_type, "text/plain");
+
+      // Verify fetch reflects change
+      const fetchRes = await req(`/notes/${jsonNoteId}`, { auth: USER_KEY });
+      const fetched = await fetchRes.json();
+      assert.equal(fetched.content_type, "text/plain");
+    });
+
+    it("serves raw note body with note content-type via ?raw=true", async () => {
+      const res = await req(`/notes/${mdNoteId}?raw=true`, { auth: USER_KEY });
+      assert.equal(res.status, 200);
+      assert.ok(res.headers.get("content-type").includes("text/markdown"));
+      const text = await res.text();
+      assert.equal(text, "# Heading");
+    });
+
+    it("rejects oversized content_type (>100 chars)", async () => {
+      const res = await req("/notes", {
+        method: "POST",
+        auth: USER_KEY,
+        body: {
+          title: `${TEST_PREFIX}Invalid Content Type`,
+          body: "Hello",
+          content_type: "x".repeat(101),
+        },
+      });
+      assert.equal(res.status, 400);
+      const data = await res.json();
+      assert.equal(data.error, "invalid_payload");
+    });
+  });
+
   describe("Security & Input Validation", () => {
     it("handles CORS OPTIONS preflight request", async () => {
       const res = await req("/notes", { method: "OPTIONS" });
