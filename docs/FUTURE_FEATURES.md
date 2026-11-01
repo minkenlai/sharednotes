@@ -224,3 +224,29 @@ LIMIT ?;
 - **Sub-millisecond query execution**: Eliminates full-table text scans as note counts grow.
 - **BM25 Relevance Scoring**: Returns the most relevant notes at the top rather than solely ordering by `updated_at`.
 - **Advanced Query Syntax**: Supports Boolean operators (`AND`, `OR`, `NOT`), prefix queries (`meet*`), and phrase queries (`"product sync"`).
+
+---
+
+## 7. Dynamic Self-Signup & Multi-Notebook Access Control
+
+Detailed architectural RFC: [AUTH_AND_NOTEBOOKS_RFC.md](./AUTH_AND_NOTEBOOKS_RFC.md)
+
+### Concept
+Transition from static Worker secret auth (`API_KEYS`) to dynamic, database-backed authentication in Cloudflare D1 with self-service registration and scoped multi-tenant notebooks.
+
+### Key Pillars
+1. **Database-Backed API Keys (`users` & `api_keys`)**:
+   - Secure token hashing with SHA-256 (`sn_live_...`), prefix auditing, and instant revocation.
+   - Backward-compatible fallback to legacy Worker secrets for bootstrap/root access.
+2. **Self-Service Registration (`POST /auth/register`)**:
+   - Allows new users or AI agents to sign up directly via API or CLI (`sharednotes signup`).
+   - Automatically provisions a personal default notebook.
+3. **Notebook Isolation Boundaries & Membership Controls**:
+   - Notebooks as first-class entities with granular access roles:
+     - `owner`: full administrative and membership control.
+     - `editor`: create, update, archive, and soft-delete notes.
+     - `viewer`: read-only access.
+   - Owners can add and remove members by `user_id` / username (Phase 1) and email invites with auto-linking on signup (Phase 2).
+4. **Context-Preserving Routing for Agents**:
+   - Transparent notebook routing via `X-Notebook-ID` header, `?notebook_id=<id>`, or default notebook fallback to maintain token-efficient prompt contexts.
+

@@ -13,7 +13,7 @@ if (fs.existsSync(envPath) && typeof process.loadEnvFile === "function") {
 
 const configuredKeys = (process.env.API_KEYS || "").split(",").map((s) => s.trim()).filter(Boolean);
 const configuredOwners = (process.env.KEY_OWNERS || "").split(",").map((s) => s.trim()).filter(Boolean);
-const BASE_URL = process.env.BASE_URL || process.env.WORKER_URL || "https://sharednotes.<your-subdomain>.workers.dev";
+const BASE_URL = process.env.BASE_URL || process.env.WORKER_URL || "http://localhost:8787";
 const ADMIN_KEY = process.env.TEST_ADMIN_KEY || configuredKeys[0] || "test-admin-key-12345";
 const USER_KEY = process.env.TEST_USER_KEY || configuredKeys[1] || "test-user-key-67890";
 const EXPECTED_USER = process.env.TEST_USER_OWNER || configuredOwners[1] || "test-user";

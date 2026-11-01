@@ -11,7 +11,7 @@ sent as a `Bearer` token or `X-API-Key` header.
 
 Role assignment is managed via secrets:
 - `KEY_ROLES`: comma-separated roles parallel to `API_KEYS` (e.g. `admin,user`).
-- `ADMIN_USERS` (optional): comma-separated owner names with admin privileges (e.g. `alice`).
+- `ADMIN_USERS` (optional): comma-separated owner names with admin privileges (e.g. `admin`).
 
 ## API
 
@@ -87,9 +87,9 @@ Copy the `database_id` from that output into `wrangler.jsonc`, then:
 ```sh
 npx wrangler d1 migrations apply sharednotes --remote
 npx wrangler secret put API_KEYS
-# enter comma-separated keys, e.g. key-for-alice,key-for-bob
+# enter comma-separated keys, e.g. key-for-admin,key-for-user
 npx wrangler secret put KEY_OWNERS
-# enter matching names in the same order, e.g. alice,bob
+# enter matching names in the same order, e.g. admin,user
 npx wrangler secret put KEY_ROLES
 # enter matching roles in the same order, e.g. admin,user
 npx wrangler deploy
@@ -167,5 +167,13 @@ curl -X POST -H "Authorization: Bearer <admin-key>" \
 Tell Muse the deployed URL. That unblocks the last step: registering the
 custom connector credential for this host and verifying a real read, so both
 Muses get a proper tool for the service instead of raw HTTP calls. Give
-Bob her own key (never yours) and the connector files from
-`~/workspace/custom-connectors/custom.sharednotes/` for her Muse.
+each collaborator their own key (never yours) and the connector files from
+`/connector.zip` for their Muse.
+
+## Documentation
+
+Project documentation is organized in the [`docs/`](docs/) directory:
+- [docs/HOWTO.md](docs/HOWTO.md): Step-by-step setup, key rotation, and deployment guide.
+- [docs/AGENT_INSTRUCTIONS.md](docs/AGENT_INSTRUCTIONS.md): Agent instruction manual and prompt-efficiency guidelines.
+- [docs/AUTH_AND_NOTEBOOKS_RFC.md](docs/AUTH_AND_NOTEBOOKS_RFC.md): Architecture RFC for dynamic self-registration and multi-notebook access controls.
+- [docs/FUTURE_FEATURES.md](docs/FUTURE_FEATURES.md): Roadmap for R2 attachments, full-text search (FTS5), and hot/cold timeline storage.

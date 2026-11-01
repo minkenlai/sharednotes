@@ -16,7 +16,7 @@ npx wrangler secret put API_KEYS
 
 2. Upload matching names (in the exact same order):
 npx wrangler secret put KEY_OWNERS
-# Enter: alice,bob
+# Enter: <your-username>,<partner-username>
 
 3. Upload matching roles (admin or user):
 npx wrangler secret put KEY_ROLES
